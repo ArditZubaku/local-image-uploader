@@ -1,0 +1,13 @@
+{
+  "name": "local-image-uploader-node",
+  "version": "1.0.0",
+  "description": "Simple local image uploader over Wi-Fi (Node.js + Express).",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "multer": "^1.4.5-lts.1"
+  }
+}
