@@ -33,6 +33,8 @@ func Register(mux *http.ServeMux, cfg config.Config) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+
+	registerBrowse(mux, cfg)
 }
 
 func handleUpload(w http.ResponseWriter, r *http.Request, cfg config.Config) {

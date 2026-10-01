@@ -1,0 +1,223 @@
+{{ define "browse.html" }}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Browse Files</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f2f2f2;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 560px;
+            padding: 24px 0;
+        }
+
+        .card {
+            background: white;
+            padding: 32px;
+            border-radius: 16px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 26px;
+            text-align: center;
+        }
+
+        .nav-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .nav-row a {
+            flex: 1;
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 14px;
+            color: #333;
+            background: #fafafa;
+            border: 1px solid #ccc;
+        }
+
+        .nav-row a.active {
+            background: #000;
+            color: white;
+            border-color: #000;
+        }
+
+        .breadcrumbs {
+            font-size: 14px;
+            margin-bottom: 16px;
+            word-wrap: break-word;
+        }
+
+        .breadcrumbs a {
+            color: #333;
+            text-decoration: none;
+        }
+
+        .breadcrumbs a:hover {
+            text-decoration: underline;
+        }
+
+        .breadcrumbs .sep {
+            color: #999;
+            margin: 0 4px;
+        }
+
+        .zip-all {
+            display: block;
+            text-align: center;
+            padding: 12px;
+            margin-bottom: 18px;
+            background: #fafafa;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .zip-all:hover {
+            background: #f0f0f0;
+        }
+
+        .entry-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .entry {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 15px;
+        }
+
+        .entry:last-child {
+            border-bottom: none;
+        }
+
+        .entry-name {
+            flex: 1;
+            min-width: 0;
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .entry-name.dir {
+            font-weight: 600;
+        }
+
+        .entry-size {
+            color: #777;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        .entry-actions {
+            display: flex;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .entry-actions a {
+            font-size: 13px;
+            text-decoration: none;
+            color: #333;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            padding: 6px 10px;
+        }
+
+        .entry-actions a:hover {
+            background: #f0f0f0;
+        }
+
+        .empty {
+            text-align: center;
+            color: #777;
+            padding: 30px 0;
+            font-size: 15px;
+        }
+
+        .error {
+            color: #b00020;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+    <div class="card">
+
+        <h1>Browse Files</h1>
+
+        <div class="nav-row">
+            <a href="/">Upload</a>
+            <a href="/browse" class="active">Browse</a>
+        </div>
+
+        {{ if .Error }}
+        <div class="error">{{ .Error }}</div>
+        {{ end }}
+
+        <div class="breadcrumbs">
+            {{ range $i, $crumb := .Breadcrumbs }}
+            {{ if $i }}<span class="sep">/</span>{{ end }}
+            <a href="/browse?path={{ $crumb.Rel }}">{{ $crumb.Name }}</a>
+            {{ end }}
+        </div>
+
+        {{ if .Entries }}
+        <a class="zip-all" href="{{ .ZipURL }}">Download this folder as .zip</a>
+        {{ end }}
+
+        {{ if .Entries }}
+        <ul class="entry-list">
+            {{ range .Entries }}
+            <li class="entry">
+                {{ if .IsDir }}
+                <a class="entry-name dir" href="{{ .OpenURL }}">{{ .Name }}/</a>
+                <div class="entry-actions">
+                    <a href="{{ .ZipURL }}">Zip</a>
+                </div>
+                {{ else }}
+                <span class="entry-name">{{ .Name }}</span>
+                <span class="entry-size">{{ .Size }}</span>
+                <div class="entry-actions">
+                    <a href="{{ .DownloadURL }}">Download</a>
+                </div>
+                {{ end }}
+            </li>
+            {{ end }}
+        </ul>
+        {{ else if not .Error }}
+        <div class="empty">This folder is empty.</div>
+        {{ end }}
+
+    </div>
+</div>
+</body>
+</html>
+{{ end }}
