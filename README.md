@@ -1,7 +1,9 @@
 # Local Image Uploader
 
-A Golang HTTP server that allows you to upload images from your phone to your laptop over the same Wi-Fi network.
-The server runs locally and exposes a simple web interface where you can select multiple images, preview them before upload, and store them on your machine.
+A Golang HTTP server that allows you to upload images (or entire folders) from your phone to your laptop over the same Wi-Fi network.
+The server runs locally and exposes a simple web interface where you can select files or a folder, preview them before upload, and store them on your machine.
+
+Uploads are streamed straight to disk — memory use stays constant whether you send one photo or a 10GB folder.
 
 The UI is optimized for iPhone Safari and desktop browsers.
 Multi-select from the iOS Photo Library works reliably.
@@ -12,11 +14,14 @@ Multi-select from the iOS Photo Library works reliably.
 
 - Runs as a single Go binary
 - No external dependencies (standard library only)
+- Streams uploads directly to disk — no size limit, no buffering in memory
+- Folder upload with relative folder structure preserved
+- Live progress bar (percent + bytes transferred)
 - Files saved to disk with unique timestamp prefixes
 - Minimal, responsive mobile UI
 - Large upload button and centered layout
 - iPhone-compatible multi-image selection
-- Preview selected images before upload (file name + size)
+- Preview selected files before upload (file name + size)
 - Saved file names are shown inside a styled results box
 - Filenames wrap correctly (no overflow)
 
@@ -51,11 +56,11 @@ If you select multiple images, all of them will be listed here before you upload
 
 ### 3. After Uploading – Saved Files List
 
-When you press **Upload**, the server receives the images and saves them to disk.
+When you press **Upload**, the server streams the files to disk as they arrive.
 
-- The page reloads.
-- The top part returns to the empty state, ready for another upload.
-- A **Saved files:** section appears inside the card.
+- A progress bar shows percent complete and bytes transferred.
+- The page does **not** reload — the upload runs in the background via the browser.
+- Once done, a **Saved files:** section appears inside the card and the selection resets.
 - Each saved file name is listed and wrapped correctly so it stays inside the box.
 
 Example after uploading one file:
@@ -80,6 +85,13 @@ Uploaded files are stored in:
 ```text
 ./uploads/<timestamp>_<filename>.jpg
 ```
+
+If you upload a folder, its structure is preserved underneath `uploads/`, with only the final filename timestamp-prefixed:
+
+```text
+./uploads/<subfolder>/<timestamp>_<filename>.jpg
+```
+
 Each filename is prefixed with a unique timestamp to avoid collisions.
 
 ![VS Code showing project and uploaded image](docs/images/2A2B92D1-0FC3-41AB-9FEA-08BBAF6522EB.png)
@@ -133,7 +145,7 @@ You may configure runtime behavior using environment variables.
 |-------------------------|------------------------------|----------|
 | `IMAGEDROP_ADDR`        | Listen address/port          | `:8080`  |
 | `IMAGEDROP_UPLOAD_DIR`  | Directory to save uploads    | `uploads`|
-| `IMAGEDROP_MAX_UPLOAD_MB` | Max upload request size (MB) | `100`    |
+| `IMAGEDROP_MAX_UPLOAD_MB` | Max upload request size (MB); unset or `0` means unlimited (disk space is the only limit) | `0` (unlimited) |
 
 ### Example (PowerShell)
 
@@ -155,11 +167,13 @@ set IMAGEDROP_MAX_UPLOAD_MB=200
 go run .
 ```
 
+Both examples above set an explicit 200MB cap; omit the variable (or set it to `0`) to leave uploads unlimited.
+
 ---
 
 ## Notes
 
 - Designed for local network use only.
 - Do **not** expose this server directly to the public internet.
-- Upload size limit applies to the entire multipart request.
-- Large files or many images may take longer to upload depending on Wi-Fi speed.
+- Uploads are unlimited by default (bounded only by free disk space); set `IMAGEDROP_MAX_UPLOAD_MB` for a cap.
+- No server-side time limit on an upload — large files or folders just take as long as your Wi-Fi speed allows.
