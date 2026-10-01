@@ -12,7 +12,11 @@ import (
 func main() {
 	cfg := config.FromEnv()
 
-	srv := server.New(cfg)
+	srv, err := server.New(cfg)
+	if err != nil {
+		log.Printf("startup failed: %v", err)
+		os.Exit(1)
+	}
 
 	addrInfo, err := server.DetectLANAddress(cfg.Addr)
 	if err != nil {
