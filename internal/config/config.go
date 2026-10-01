@@ -16,7 +16,7 @@ type Config struct {
 const (
 	defaultAddr          = ":8080"
 	defaultUploadDir     = "uploads"
-	defaultMaxUploadSize = int64(100 * 1024 * 1024) // 100 MB
+	defaultMaxUploadSize = int64(0) // 0 = unlimited, bounded only by disk space
 )
 
 // FromEnv builds configuration from environment variables with sane defaults.
@@ -37,10 +37,13 @@ func FromEnv() Config {
 
 	if v := os.Getenv("IMAGEDROP_MAX_UPLOAD_MB"); v != "" {
 		mb, err := strconv.Atoi(v)
-		if err != nil {
-			log.Printf("invalid IMAGEDROP_MAX_UPLOAD_MB=%q, using default %d MB", v, defaultMaxUploadSize/1024/1024)
-		} else if mb > 0 {
+		switch {
+		case err != nil:
+			log.Printf("invalid IMAGEDROP_MAX_UPLOAD_MB=%q, uploads are unlimited", v)
+		case mb > 0:
 			cfg.MaxUploadSize = int64(mb) * 1024 * 1024
+		default:
+			cfg.MaxUploadSize = 0
 		}
 	}
 
