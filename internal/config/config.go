@@ -10,7 +10,8 @@ import (
 type Config struct {
 	Addr          string
 	UploadDir     string
-	MaxUploadSize int64 // bytes
+	ShareDir      string // root directory exposed by the browse/download pages
+	MaxUploadSize int64  // bytes
 }
 
 const (
@@ -33,6 +34,13 @@ func FromEnv() Config {
 
 	if v := os.Getenv("IMAGEDROP_UPLOAD_DIR"); v != "" {
 		cfg.UploadDir = v
+	}
+
+	// Defaults to UploadDir: the same folder you upload into is what you
+	// browse/download from, unless pointed elsewhere explicitly.
+	cfg.ShareDir = cfg.UploadDir
+	if v := os.Getenv("IMAGEDROP_SHARE_DIR"); v != "" {
+		cfg.ShareDir = v
 	}
 
 	if v := os.Getenv("IMAGEDROP_MAX_UPLOAD_MB"); v != "" {
