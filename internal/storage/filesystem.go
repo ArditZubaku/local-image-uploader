@@ -2,60 +2,43 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ArditZubaku/go-local-image-uploader/internal/utils"
 )
 
-// SaveUploadedFiles stores all files from the "files" field into uploadDir.
-// It returns the final file names on disk (relative to uploadDir).
-func SaveUploadedFiles(uploadDir string, form *multipart.Form) ([]string, error) {
-	files := form.File["files"]
-	if len(files) == 0 {
-		return nil, fmt.Errorf("no files uploaded")
-	}
-
-	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
-		return nil, fmt.Errorf("creating upload dir: %w", err)
-	}
-
+// SaveStream reads a multipart request one part at a time and writes each
+// part straight to disk, so memory use stays constant no matter how large
+// a file (or how many files in a folder upload) comes through.
+func SaveStream(uploadDir string, mr *multipart.Reader) ([]string, error) {
 	var saved []string
 
-	for _, fh := range files {
-		name := filepath.Base(fh.Filename)
-		if name == "" {
-			continue
+	for {
+		part, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
 		}
-
-		src, err := fh.Open()
 		if err != nil {
-			return nil, fmt.Errorf("opening uploaded file: %w", err)
+			return saved, fmt.Errorf("reading multipart part: %w", err)
 		}
-		defer utils.CloseOrLog(src, "multipart file")
 
-		timestamp := time.Now().UnixNano()
-		finalName := fmt.Sprintf("%d_%s", timestamp, name)
-		path := filepath.Join(uploadDir, finalName)
-
-		dst, err := os.Create(path)
+		name, err := savePart(uploadDir, part)
+		_ = part.Close()
 		if err != nil {
-			return nil, fmt.Errorf("creating destination file: %w", err)
+			return saved, err
 		}
-
-		if _, err := io.Copy(dst, src); err != nil {
-			utils.CloseOrLog(dst, "destination file")
-			return nil, fmt.Errorf("saving file: %w", err)
+		if name != "" {
+			saved = append(saved, name)
 		}
-		if err := dst.Close(); err != nil {
-			return nil, fmt.Errorf("closing file: %w", err)
-		}
-
-		saved = append(saved, finalName)
 	}
 
 	if len(saved) == 0 {
@@ -63,4 +46,65 @@ func SaveUploadedFiles(uploadDir string, form *multipart.Form) ([]string, error)
 	}
 
 	return saved, nil
+}
+
+func savePart(uploadDir string, part *multipart.Part) (string, error) {
+	if part.FormName() != "files" || part.FileName() == "" {
+		return "", nil
+	}
+
+	// part.FileName() runs the raw header through filepath.Base, which
+	// destroys folder-upload paths; read the untouched value ourselves.
+	rel, err := sanitizeRelPath(rawFileName(part))
+	if err != nil {
+		return "", nil
+	}
+
+	dir, base := filepath.Split(rel)
+	relOut := filepath.Join(dir, fmt.Sprintf("%d_%s", time.Now().UnixNano(), base))
+	dest := filepath.Join(uploadDir, relOut)
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return "", fmt.Errorf("creating upload dir: %w", err)
+	}
+
+	dst, err := os.Create(dest)
+	if err != nil {
+		return "", fmt.Errorf("creating destination file: %w", err)
+	}
+
+	if _, err := io.Copy(dst, part); err != nil {
+		utils.CloseOrLog(dst, "destination file")
+		return "", fmt.Errorf("saving %s: %w", rel, err)
+	}
+
+	if err := dst.Close(); err != nil {
+		return "", fmt.Errorf("closing file: %w", err)
+	}
+
+	return filepath.ToSlash(relOut), nil
+}
+
+func rawFileName(part *multipart.Part) string {
+	_, params, err := mime.ParseMediaType(part.Header.Get("Content-Disposition"))
+	if err != nil {
+		return part.FileName()
+	}
+	if fn, ok := params["filename"]; ok {
+		return fn
+	}
+	return part.FileName()
+}
+
+// sanitizeRelPath cleans a client-supplied (possibly multi-segment) path
+// and rejects anything that would escape uploadDir.
+func sanitizeRelPath(raw string) (string, error) {
+	clean := path.Clean(strings.ReplaceAll(raw, "\\", "/"))
+	clean = strings.TrimPrefix(clean, "/")
+
+	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("unsafe path: %q", raw)
+	}
+
+	return filepath.FromSlash(clean), nil
 }
