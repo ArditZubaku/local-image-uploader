@@ -1,15 +1,18 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/ArditZubaku/go-local-image-uploader/internal/storage"
 	"github.com/ArditZubaku/go-local-image-uploader/internal/utils"
@@ -239,24 +242,109 @@ func (b *browser) streamZip(w http.ResponseWriter, r *http.Request, rels []strin
 		return
 	}
 
+	etag := plan.ETag()
+
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Length", strconv.FormatInt(plan.Size, 10))
 	w.Header().Set("Content-Disposition", contentDisposition(name+".zip"))
-	// The archive is generated per request and not seekable, so range
-	// requests must be refused rather than silently answered with the
-	// wrong bytes.
-	w.Header().Set("Accept-Ranges", "none")
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Accept-Ranges", "bytes")
+
+	start, end, status := resolveRange(r, plan.Size, etag)
+	switch status {
+	case http.StatusRequestedRangeNotSatisfiable:
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", plan.Size))
+		http.Error(w, "range not satisfiable", status)
+		return
+	case http.StatusPartialContent:
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, plan.Size))
+	}
+
+	w.Header().Set("Content-Length", strconv.FormatInt(end-start+1, 10))
+	w.WriteHeader(status)
 
 	if r.Method == http.MethodHead {
 		return
 	}
 
-	// Headers are already flushed by the time any write below can fail
-	// (e.g. the client disconnects mid-stream), so there's no status
-	// code left to report an error with; just log and stop.
-	if err := plan.Stream(w); err != nil {
+	if err := plan.StreamRange(w, start, end); err != nil {
+		// Headers are already flushed by the time any write below can fail,
+		// so there's no status code left to report an error with. A phone
+		// tapping cancel is the ordinary way for this to end, and saying so
+		// at error level would make every cancelled download look like a
+		// fault.
+		if clientGone(r, err) {
+			return
+		}
 		log.Printf("zip stream error (%d files, %s): %v", len(plan.Entries), utils.FormatBytes(plan.Size), err)
 	}
+}
+
+// resolveRange interprets a Range header against an archive of the given
+// size, returning the byte span to send and the status to send it with.
+//
+// A resume is only honoured when the archive is provably unchanged: the
+// plan's tag covers every input to the output bytes, so a mismatched
+// If-Range (a file added, removed, or touched since) quietly falls back to
+// sending the whole thing rather than splicing two different archives.
+func resolveRange(r *http.Request, size int64, etag string) (start, end int64, status int) {
+	header := r.Header.Get("Range")
+	if header == "" {
+		return 0, size - 1, http.StatusOK
+	}
+	if ifRange := r.Header.Get("If-Range"); ifRange != "" && ifRange != etag {
+		return 0, size - 1, http.StatusOK
+	}
+
+	spec, ok := strings.CutPrefix(header, "bytes=")
+	// Multiple ranges would need a multipart response for an archive that
+	// has to be regenerated per span; answering with the whole file is a
+	// legal and far cheaper reply.
+	if !ok || strings.Contains(spec, ",") {
+		return 0, size - 1, http.StatusOK
+	}
+
+	from, to, ok := strings.Cut(spec, "-")
+	if !ok {
+		return 0, size - 1, http.StatusOK
+	}
+
+	switch {
+	case from == "":
+		// "bytes=-N": the final N bytes.
+		n, err := strconv.ParseInt(to, 10, 64)
+		if err != nil || n <= 0 {
+			return 0, size - 1, http.StatusOK
+		}
+		start, end = max(0, size-n), size-1
+	default:
+		var err error
+		if start, err = strconv.ParseInt(from, 10, 64); err != nil || start < 0 {
+			return 0, size - 1, http.StatusOK
+		}
+		end = size - 1
+		if to != "" {
+			if end, err = strconv.ParseInt(to, 10, 64); err != nil {
+				return 0, size - 1, http.StatusOK
+			}
+			end = min(end, size-1)
+		}
+	}
+
+	if start >= size || end < start {
+		return 0, 0, http.StatusRequestedRangeNotSatisfiable
+	}
+
+	return start, end, http.StatusPartialContent
+}
+
+// clientGone reports whether a stream ended because the phone went away -
+// cancelled, backgrounded, or off the network - rather than because
+// anything went wrong on this end.
+func clientGone(r *http.Request, err error) bool {
+	return r.Context().Err() != nil ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, net.ErrClosed)
 }
 
 // contentDisposition emits both the plain and RFC 5987 filename forms, so
