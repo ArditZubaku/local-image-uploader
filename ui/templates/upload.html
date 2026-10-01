@@ -15,12 +15,13 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
         }
 
         .container {
             width: 90%;
             max-width: 480px;
+            padding: 24px 0;
         }
 
         .card {
@@ -53,6 +54,26 @@
             background: #f0f0f0;
         }
 
+        .picker-row {
+            margin-top: 14px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .picker-row button {
+            flex: 1;
+            padding: 12px;
+            font-size: 15px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background: #fafafa;
+            cursor: pointer;
+        }
+
+        .picker-row button:hover {
+            background: #f0f0f0;
+        }
+
         input[type=file] {
             display: none;
         }
@@ -62,6 +83,8 @@
             text-align: left;
             font-size: 16px;
             word-wrap: break-word;
+            max-height: 180px;
+            overflow-y: auto;
         }
 
         .preview-item {
@@ -84,7 +107,31 @@
             opacity: 0.6;
         }
 
-        /* FIXED Saved Files section */
+        .progress-wrapper {
+            margin-top: 18px;
+            display: none;
+        }
+
+        .progress-track {
+            background: #eee;
+            border-radius: 8px;
+            overflow: hidden;
+            height: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: #000;
+            transition: width 0.15s ease;
+        }
+
+        .progress-label {
+            margin-top: 8px;
+            font-size: 14px;
+            color: #555;
+        }
+
         .saved-wrapper {
             margin-top: 28px;
             text-align: left;
@@ -116,21 +163,33 @@
 
         <h1>Upload Images</h1>
 
-        <form id="upload-form" method="post" enctype="multipart/form-data">
+        <form id="upload-form">
 
             <div class="drop-zone" id="drop-zone">
                 <div id="drop-text">Tap here to choose images</div>
             </div>
 
+            <div class="picker-row">
+                <button type="button" id="pick-files-btn">Choose Files</button>
+                <button type="button" id="pick-folder-btn">Choose Folder</button>
+            </div>
+
             <input id="file-input" type="file" name="files" accept="image/*" multiple>
+            <input id="folder-input" type="file" webkitdirectory directory multiple>
 
             <div id="preview" class="preview-list"></div>
+
+            <div class="progress-wrapper" id="progress-wrapper">
+                <div class="progress-track">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <div class="progress-label" id="progress-label"></div>
+            </div>
 
             <button class="btn" type="submit" id="upload-btn">Upload</button>
         </form>
 
-        <!-- FIXED Saved Files UI block -->
-        <div class="saved-wrapper">
+        <div class="saved-wrapper" id="saved-wrapper">
             {{ if .SavedFiles }}
             <strong>Saved files:</strong>
             <ul>
@@ -153,41 +212,146 @@
 <script>
     const dropZone = document.getElementById("drop-zone");
     const fileInput = document.getElementById("file-input");
+    const folderInput = document.getElementById("folder-input");
+    const pickFilesBtn = document.getElementById("pick-files-btn");
+    const pickFolderBtn = document.getElementById("pick-folder-btn");
     const dropText = document.getElementById("drop-text");
     const preview = document.getElementById("preview");
     const uploadBtn = document.getElementById("upload-btn");
     const statusText = document.getElementById("status-text");
+    const savedWrapper = document.getElementById("saved-wrapper");
     const form = document.getElementById("upload-form");
+    const progressWrapper = document.getElementById("progress-wrapper");
+    const progressFill = document.getElementById("progress-fill");
+    const progressLabel = document.getElementById("progress-label");
+
+    let selected = [];
 
     dropZone.addEventListener("click", () => fileInput.click());
+    pickFilesBtn.addEventListener("click", () => fileInput.click());
+    pickFolderBtn.addEventListener("click", () => folderInput.click());
 
-    fileInput.addEventListener("change", () => {
+    function renderSelection() {
         preview.innerHTML = "";
 
-        if (fileInput.files.length === 0) {
+        if (selected.length === 0) {
             dropText.textContent = "Tap here to choose images";
             return;
         }
 
-        dropText.textContent = fileInput.files.length + " files selected";
+        dropText.textContent = selected.length + " files selected";
 
-        for (const f of fileInput.files) {
+        for (const f of selected) {
             const item = document.createElement("div");
             item.className = "preview-item";
-            item.textContent = f.name + " (" + Math.round(f.size / 1024) + " KB)";
+            const label = f.webkitRelativePath || f.name;
+            item.textContent = label + " (" + Math.round(f.size / 1024) + " KB)";
             preview.appendChild(item);
         }
+    }
+
+    fileInput.addEventListener("change", () => {
+        selected = [...fileInput.files];
+        renderSelection();
     });
 
+    folderInput.addEventListener("change", () => {
+        selected = [...folderInput.files];
+        renderSelection();
+    });
+
+    function formatBytes(n) {
+        const units = ["B", "KB", "MB", "GB"];
+        let i = 0;
+        while (n >= 1024 && i < units.length - 1) {
+            n /= 1024;
+            i++;
+        }
+        return n.toFixed(1) + " " + units[i];
+    }
+
     form.addEventListener("submit", (e) => {
-        if (fileInput.files.length === 0) {
-            e.preventDefault();
+        e.preventDefault();
+
+        if (selected.length === 0) {
             statusText.textContent = "Select at least one image.";
             statusText.classList.add("error");
             return;
         }
+
+        const formData = new FormData();
+        for (const f of selected) {
+            // Explicit filename arg carries the folder path (webkitRelativePath)
+            // through to the server; the browser won't send it otherwise.
+            formData.append("files", f, f.webkitRelativePath || f.name);
+        }
+
         uploadBtn.disabled = true;
         uploadBtn.textContent = "Uploading...";
+        statusText.textContent = "";
+        statusText.classList.remove("error");
+        progressWrapper.style.display = "block";
+        progressFill.style.width = "0%";
+        progressLabel.textContent = "";
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/", true);
+        xhr.setRequestHeader("Accept", "application/json");
+
+        xhr.upload.addEventListener("progress", (ev) => {
+            if (!ev.lengthComputable) return;
+            const pct = Math.round((ev.loaded / ev.total) * 100);
+            progressFill.style.width = pct + "%";
+            progressLabel.textContent = pct + "% (" + formatBytes(ev.loaded) + " / " + formatBytes(ev.total) + ")";
+        });
+
+        xhr.addEventListener("load", () => {
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = "Upload";
+
+            let result = {};
+            try {
+                result = JSON.parse(xhr.responseText);
+            } catch (err) {
+                result = { error: "unexpected server response" };
+            }
+
+            if (result.error) {
+                statusText.textContent = result.error;
+                statusText.classList.add("error");
+            } else {
+                statusText.textContent = "";
+                statusText.classList.remove("error");
+            }
+
+            savedWrapper.innerHTML = "";
+            if (result.savedFiles && result.savedFiles.length > 0) {
+                const strong = document.createElement("strong");
+                strong.textContent = "Saved files:";
+                const ul = document.createElement("ul");
+                for (const name of result.savedFiles) {
+                    const li = document.createElement("li");
+                    li.textContent = name;
+                    ul.appendChild(li);
+                }
+                savedWrapper.appendChild(strong);
+                savedWrapper.appendChild(ul);
+
+                selected = [];
+                fileInput.value = "";
+                folderInput.value = "";
+                renderSelection();
+            }
+        });
+
+        xhr.addEventListener("error", () => {
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = "Upload";
+            statusText.textContent = "Upload failed (connection error).";
+            statusText.classList.add("error");
+        });
+
+        xhr.send(formData);
     });
 </script>
 
