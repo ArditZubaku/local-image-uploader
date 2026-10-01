@@ -7,6 +7,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <style>
+        :root { --line: #e4e4e4; --muted: #777; }
+
         body {
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             margin: 0;
@@ -18,29 +20,21 @@
         }
 
         .container {
-            width: 90%;
-            max-width: 560px;
-            padding: 24px 0;
+            width: 94%;
+            max-width: 760px;
+            padding: 24px 0 96px;
         }
 
         .card {
             background: white;
-            padding: 32px;
+            padding: 24px;
             border-radius: 16px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }
 
-        h1 {
-            margin-top: 0;
-            font-size: 26px;
-            text-align: center;
-        }
+        h1 { margin-top: 0; font-size: 26px; text-align: center; }
 
-        .nav-row {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
+        .nav-row { display: flex; gap: 10px; margin-bottom: 20px; }
 
         .nav-row a {
             flex: 1;
@@ -54,91 +48,116 @@
             border: 1px solid #ccc;
         }
 
-        .nav-row a.active {
-            background: #000;
-            color: white;
-            border-color: #000;
-        }
+        .nav-row a.active { background: #000; color: white; border-color: #000; }
 
-        .breadcrumbs {
-            font-size: 14px;
+        .breadcrumbs { font-size: 14px; margin-bottom: 14px; word-wrap: break-word; }
+        .breadcrumbs a { color: #333; text-decoration: none; }
+        .breadcrumbs a:hover { text-decoration: underline; }
+        .breadcrumbs .sep { color: #999; margin: 0 4px; }
+
+        .toolbar {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
             margin-bottom: 16px;
-            word-wrap: break-word;
         }
 
-        .breadcrumbs a {
-            color: #333;
-            text-decoration: none;
-        }
+        .toolbar .spacer { flex: 1; }
 
-        .breadcrumbs a:hover {
-            text-decoration: underline;
-        }
-
-        .breadcrumbs .sep {
-            color: #999;
-            margin: 0 4px;
-        }
-
-        .zip-all {
-            display: block;
-            text-align: center;
-            padding: 12px;
-            margin-bottom: 18px;
-            background: #fafafa;
-            border: 1px solid #ccc;
+        .btn-link, .toggle {
+            font: inherit;
+            font-size: 13px;
+            padding: 8px 12px;
             border-radius: 8px;
-            text-decoration: none;
+            border: 1px solid #ccc;
+            background: #fafafa;
             color: #333;
-            font-size: 14px;
+            text-decoration: none;
+            cursor: pointer;
         }
 
-        .zip-all:hover {
-            background: #f0f0f0;
+        .btn-link:hover, .toggle:hover { background: #f0f0f0; }
+        .toggle.active { background: #000; color: white; border-color: #000; }
+
+        .meta { font-size: 13px; color: var(--muted); }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+            gap: 8px;
         }
 
-        .entry-list {
-            list-style: none;
+        .tile {
+            position: relative;
+            aspect-ratio: 1;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #ebebeb;
+            display: block;
+        }
+
+        .tile img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            background: #ebebeb;
+        }
+
+        .tile .fallback {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+            font-size: 11px;
+            color: #555;
+            text-align: center;
+            word-break: break-word;
+            overflow: hidden;
+        }
+
+        .tile.folder .fallback { font-weight: 600; }
+
+        .tile .caption {
+            position: absolute;
+            left: 0; right: 0; bottom: 0;
+            padding: 14px 6px 4px;
+            font-size: 10px;
+            color: #fff;
+            background: linear-gradient(transparent, rgba(0,0,0,0.65));
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .pick {
+            position: absolute;
+            top: 6px; left: 6px;
+            width: 22px; height: 22px;
             margin: 0;
-            padding: 0;
+            accent-color: #000;
+            z-index: 2;
         }
+
+        .entry-list { list-style: none; margin: 0; padding: 0; }
 
         .entry {
             display: flex;
             align-items: center;
-            justify-content: space-between;
             gap: 10px;
             padding: 12px 0;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--line);
             font-size: 15px;
         }
 
-        .entry:last-child {
-            border-bottom: none;
-        }
-
-        .entry-name {
-            flex: 1;
-            min-width: 0;
-            word-break: break-word;
-            overflow-wrap: break-word;
-        }
-
-        .entry-name.dir {
-            font-weight: 600;
-        }
-
-        .entry-size {
-            color: #777;
-            font-size: 13px;
-            white-space: nowrap;
-        }
-
-        .entry-actions {
-            display: flex;
-            gap: 8px;
-            white-space: nowrap;
-        }
+        .entry:last-child { border-bottom: none; }
+        .entry input[type=checkbox] { width: 20px; height: 20px; accent-color: #000; flex: none; }
+        .entry-name { flex: 1; min-width: 0; word-break: break-word; color: #333; text-decoration: none; }
+        .entry-name.dir { font-weight: 600; }
+        .entry-size { color: var(--muted); font-size: 13px; white-space: nowrap; }
 
         .entry-actions a {
             font-size: 13px;
@@ -147,22 +166,50 @@
             border: 1px solid #ccc;
             border-radius: 6px;
             padding: 6px 10px;
+            white-space: nowrap;
         }
 
-        .entry-actions a:hover {
-            background: #f0f0f0;
+        .view-grid .entry-list, .view-list .grid { display: none; }
+
+        .actionbar {
+            position: fixed;
+            left: 0; right: 0; bottom: 0;
+            padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+            background: rgba(255,255,255,0.96);
+            backdrop-filter: blur(8px);
+            border-top: 1px solid var(--line);
+            display: none;
+            gap: 10px;
+            align-items: center;
+            justify-content: center;
         }
 
-        .empty {
-            text-align: center;
-            color: #777;
-            padding: 30px 0;
+        .actionbar.visible { display: flex; }
+
+        .actionbar button {
+            font: inherit;
             font-size: 15px;
+            padding: 12px 18px;
+            border-radius: 10px;
+            border: none;
+            background: #000;
+            color: white;
+            cursor: pointer;
         }
 
-        .error {
-            color: #b00020;
-            margin-bottom: 16px;
+        .actionbar .clear { background: #fafafa; color: #333; border: 1px solid #ccc; }
+
+        .empty { text-align: center; color: var(--muted); padding: 30px 0; font-size: 15px; }
+        .error { color: #b00020; margin-bottom: 16px; }
+
+        .notice {
+            font-size: 13px;
+            color: #6a5000;
+            background: #fff8e1;
+            border: 1px solid #f0e0a0;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 14px;
         }
     </style>
 </head>
@@ -182,6 +229,10 @@
         <div class="error">{{ .Error }}</div>
         {{ end }}
 
+        {{ if .Truncated }}
+        <div class="notice">{{ .Truncated }}</div>
+        {{ end }}
+
         <div class="breadcrumbs">
             {{ range $i, $crumb := .Breadcrumbs }}
             {{ if $i }}<span class="sep">/</span>{{ end }}
@@ -190,34 +241,151 @@
         </div>
 
         {{ if .Entries }}
-        <a class="zip-all" href="{{ .ZipURL }}">Download this folder as .zip</a>
-        {{ end }}
+        <form id="selection" method="post" action="/download-zip">
+            <div class="toolbar">
+                <a class="btn-link" href="{{ .ZipURL }}">Download folder (.zip)</a>
+                <button type="button" class="btn-link" id="select-all">Select all</button>
+                <span class="spacer"></span>
+                {{ if .TotalSize }}<span class="meta">{{ .TotalSize }}</span>{{ end }}
+                <button type="button" class="toggle" id="view-toggle">List</button>
+            </div>
 
-        {{ if .Entries }}
-        <ul class="entry-list">
-            {{ range .Entries }}
-            <li class="entry">
-                {{ if .IsDir }}
-                <a class="entry-name dir" href="{{ .OpenURL }}">{{ .Name }}/</a>
-                <div class="entry-actions">
-                    <a href="{{ .ZipURL }}">Zip</a>
+            <div id="views" class="view-grid">
+                <div class="grid">
+                    {{ range .Entries }}
+                    <div class="tile{{ if .IsDir }} folder{{ end }}">
+                        <input class="pick" type="checkbox" name="path" value="{{ .Rel }}" aria-label="Select {{ .Name }}">
+                        {{ if .IsDir }}
+                        <a href="{{ .OpenURL }}" class="fallback">{{ .Name }}/</a>
+                        {{ else if .ThumbURL }}
+                        <a href="{{ .DownloadURL }}">
+                            <img src="{{ .ThumbURL }}" alt="{{ .Name }}" loading="lazy" decoding="async">
+                        </a>
+                        {{ else }}
+                        <a href="{{ .DownloadURL }}" class="fallback">{{ .Name }}</a>
+                        {{ end }}
+                        <span class="caption">{{ .Name }}</span>
+                    </div>
+                    {{ end }}
                 </div>
-                {{ else }}
-                <span class="entry-name">{{ .Name }}</span>
-                <span class="entry-size">{{ .Size }}</span>
-                <div class="entry-actions">
-                    <a href="{{ .DownloadURL }}">Download</a>
-                </div>
-                {{ end }}
-            </li>
-            {{ end }}
-        </ul>
+
+                <ul class="entry-list">
+                    {{ range .Entries }}
+                    <li class="entry">
+                        <input class="pick" type="checkbox" name="path" value="{{ .Rel }}" aria-label="Select {{ .Name }}">
+                        {{ if .IsDir }}
+                        <a class="entry-name dir" href="{{ .OpenURL }}">{{ .Name }}/</a>
+                        <div class="entry-actions"><a href="{{ .ZipURL }}">Zip</a></div>
+                        {{ else }}
+                        <a class="entry-name" href="{{ .DownloadURL }}">{{ .Name }}</a>
+                        <span class="entry-size">{{ .Size }}</span>
+                        <div class="entry-actions"><a href="{{ .DownloadURL }}">Get</a></div>
+                        {{ end }}
+                    </li>
+                    {{ end }}
+                </ul>
+            </div>
+
+            <div class="actionbar" id="actionbar">
+                <button type="button" class="clear" id="clear-selection">Clear</button>
+                <button type="submit" id="download-selected">Download</button>
+            </div>
+        </form>
         {{ else if not .Error }}
         <div class="empty">This folder is empty.</div>
         {{ end }}
 
     </div>
 </div>
+
+<script>
+    const form = document.getElementById("selection");
+    if (form) {
+        const views = document.getElementById("views");
+        const toggle = document.getElementById("view-toggle");
+        const bar = document.getElementById("actionbar");
+        const downloadBtn = document.getElementById("download-selected");
+        const selectAll = document.getElementById("select-all");
+        const hasImages = {{ if .HasImages }}true{{ else }}false{{ end }};
+
+        // Both views render the same entries, so a checkbox exists twice per
+        // file; keying by value keeps the two in step and the POST body free
+        // of duplicates.
+        const boxes = [...form.querySelectorAll("input[name=path]")];
+        const byValue = new Map();
+        for (const box of boxes) {
+            if (!byValue.has(box.value)) byValue.set(box.value, []);
+            byValue.get(box.value).push(box);
+        }
+
+        function selectedValues() {
+            return [...byValue.entries()].filter(([, group]) => group[0].checked).map(([v]) => v);
+        }
+
+        function refresh() {
+            const n = selectedValues().length;
+            bar.classList.toggle("visible", n > 0);
+            downloadBtn.textContent = n === 1 ? "Download 1 item (.zip)" : "Download " + n + " items (.zip)";
+            selectAll.textContent = n === byValue.size ? "Select none" : "Select all";
+        }
+
+        for (const box of boxes) {
+            box.addEventListener("change", () => {
+                for (const twin of byValue.get(box.value)) twin.checked = box.checked;
+                refresh();
+            });
+        }
+
+        selectAll.addEventListener("click", () => {
+            const next = selectedValues().length !== byValue.size;
+            for (const box of boxes) box.checked = next;
+            refresh();
+        });
+
+        document.getElementById("clear-selection").addEventListener("click", () => {
+            for (const box of boxes) box.checked = false;
+            refresh();
+        });
+
+        // Only the visible view's checkboxes are submitted; the hidden
+        // twin would otherwise send every path twice.
+        form.addEventListener("submit", () => {
+            const visible = views.classList.contains("view-grid") ? ".grid" : ".entry-list";
+            for (const box of boxes) {
+                box.disabled = box.checked && !box.closest(visible);
+            }
+        });
+
+        function applyView(mode) {
+            views.className = mode === "list" ? "view-list" : "view-grid";
+            toggle.textContent = mode === "list" ? "Grid" : "List";
+            toggle.classList.toggle("active", mode === "list");
+            try { localStorage.setItem("imagedrop-view", mode); } catch (e) { /* private mode */ }
+        }
+
+        let stored = null;
+        try { stored = localStorage.getItem("imagedrop-view"); } catch (e) { /* private mode */ }
+        applyView(stored || (hasImages ? "grid" : "list"));
+
+        toggle.addEventListener("click", () => {
+            applyView(views.classList.contains("view-grid") ? "list" : "grid");
+        });
+
+        // A preview that fails to render leaves the tile usable as a link
+        // rather than showing a broken-image icon.
+        for (const img of form.querySelectorAll(".tile img")) {
+            img.addEventListener("error", () => {
+                const link = img.parentElement;
+                link.className = "fallback";
+                link.textContent = img.alt;
+                img.remove();
+            });
+        }
+
+        refresh();
+    }
+</script>
+
 </body>
 </html>
 {{ end }}
