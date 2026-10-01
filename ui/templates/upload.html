@@ -154,6 +154,30 @@
         .error {
             color: #b00020;
         }
+
+        .nav-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .nav-row a {
+            flex: 1;
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 14px;
+            color: #333;
+            background: #fafafa;
+            border: 1px solid #ccc;
+        }
+
+        .nav-row a.active {
+            background: #000;
+            color: white;
+            border-color: #000;
+        }
     </style>
 </head>
 
@@ -162,6 +186,11 @@
     <div class="card">
 
         <h1>Upload Images</h1>
+
+        <div class="nav-row">
+            <a href="/" class="active">Upload</a>
+            <a href="/browse">Browse</a>
+        </div>
 
         <form id="upload-form">
 
