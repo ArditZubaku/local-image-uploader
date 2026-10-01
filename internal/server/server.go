@@ -25,10 +25,12 @@ func New(cfg config.Config) *Server {
 	handlers.Register(mux, cfg)
 
 	httpSrv := &http.Server{
-		Addr:         cfg.Addr,
-		Handler:      loggingMiddleware(mux),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:    cfg.Addr,
+		Handler: loggingMiddleware(mux),
+		// No ReadTimeout/WriteTimeout: both would cap the whole request
+		// lifetime, killing large uploads mid-transfer. ReadHeaderTimeout
+		// alone still guards against slow-header (slowloris) connections.
+		ReadHeaderTimeout: 15 * time.Second,
 	}
 
 	return &Server{httpServer: httpSrv}
