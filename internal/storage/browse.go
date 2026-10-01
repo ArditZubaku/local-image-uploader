@@ -4,6 +4,8 @@ package storage
 import (
 	"archive/zip"
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -174,10 +176,22 @@ type ZipEntry struct {
 }
 
 // ZipPlan is a fully enumerated archive: every member and the exact number
-// of bytes WriteTo will emit for them.
+// of bytes ZipPlan.Stream will emit for them.
 type ZipPlan struct {
 	Entries []ZipEntry
 	Size    int64
+}
+
+// ETag identifies the exact archive this plan produces. Every byte of the
+// output is a function of the member list, their sizes and their
+// timestamps, so two plans with equal tags stream identical bytes - which
+// is what makes resuming a part-finished download safe.
+func (p *ZipPlan) ETag() string {
+	h := sha256.New()
+	for _, e := range p.Entries {
+		fmt.Fprintf(h, "%s|%d|%d\n", e.Name, e.Size, e.ModTime.UnixNano())
+	}
+	return `"` + hex.EncodeToString(h.Sum(nil)[:16]) + `"`
 }
 
 // PlanZip walks the given relative paths (files or folders) and returns the
@@ -277,22 +291,81 @@ func uniqueName(taken map[string]bool, name string) string {
 // exactly the size recorded while planning, keeping the stream consistent
 // with the Content-Length already on the wire.
 func (p *ZipPlan) Stream(w io.Writer) error {
+	return p.StreamRange(w, 0, p.Size-1)
+}
+
+// StreamRange writes the bytes of the planned archive between start and
+// end inclusive, so a download interrupted part-way can be resumed rather
+// than restarted.
+//
+// The archive is regenerated from the beginning and the leading bytes are
+// discarded, because each member's trailing data descriptor carries a CRC
+// of its contents - there is no way to emit a later byte without having
+// read the earlier ones. That costs a local re-read at disk speed while
+// saving the retransmission over Wi-Fi, which is the slow half by orders
+// of magnitude.
+func (p *ZipPlan) StreamRange(w io.Writer, start, end int64) error {
 	bw := bufio.NewWriterSize(w, bufSize)
-	zw := zip.NewWriter(bw)
+	rw := &rangeWriter{w: bw, skip: start, limit: end - start + 1}
+	zw := zip.NewWriter(rw)
 
 	for _, e := range p.Entries {
-		if err := writeZipEntry(zw, e); err != nil {
+		err := writeZipEntry(zw, e)
+		if errors.Is(err, errRangeDone) {
+			return bw.Flush()
+		}
+		if err != nil {
 			return err
 		}
 	}
 
 	// Close writes the central directory; dropping its error would hand
 	// the phone a truncated, unopenable archive with no trace in the log.
-	if err := zw.Close(); err != nil {
+	if err := zw.Close(); err != nil && !errors.Is(err, errRangeDone) {
 		return fmt.Errorf("finalising archive: %w", err)
 	}
 
 	return bw.Flush()
+}
+
+// errRangeDone unwinds the zip writer once the requested range has been
+// emitted, so a range ending early doesn't read the rest of the files.
+var errRangeDone = errors.New("requested range complete")
+
+// rangeWriter drops the first skip bytes written through it and stops
+// after limit more.
+type rangeWriter struct {
+	w     io.Writer
+	skip  int64
+	limit int64
+}
+
+func (r *rangeWriter) Write(p []byte) (int, error) {
+	n := len(p)
+
+	if r.skip > 0 {
+		drop := min(int64(len(p)), r.skip)
+		r.skip -= drop
+		p = p[drop:]
+	}
+
+	if int64(len(p)) > r.limit {
+		p = p[:r.limit]
+	}
+
+	if len(p) > 0 {
+		written, err := r.w.Write(p)
+		r.limit -= int64(written)
+		if err != nil {
+			return n, err
+		}
+	}
+
+	if r.limit <= 0 {
+		return n, errRangeDone
+	}
+
+	return n, nil
 }
 
 func writeZipEntry(zw *zip.Writer, e ZipEntry) error {
