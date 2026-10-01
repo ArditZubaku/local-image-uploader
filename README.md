@@ -28,6 +28,7 @@ Multi-select from the iOS Photo Library works reliably.
 - Download single files (with resume support via HTTP Range)
 - Download an entire folder as a streamed `.zip`, at any size — with a real
   `Content-Length`, so the phone shows a progress bar and an ETA
+- Interrupted `.zip` downloads resume instead of restarting
 - Minimal, responsive mobile UI
 - Large upload button and centered layout
 - iPhone-compatible multi-image selection
@@ -128,6 +129,11 @@ Tap **Browse** (next to **Upload** in the nav row) to go the other way: pull fil
   Archives are zipped on the fly as they stream, so this works for folders much larger
   than your phone's free RAM, and the exact size is sent up front so the phone can show
   real progress.
+- If a `.zip` download is cancelled or the phone drops off Wi-Fi, resuming it continues
+  where it stopped rather than starting over. The archive is rebuilt locally up to that
+  point (fast, off disk) but only the remaining bytes are sent over the network. If any
+  file in the folder changed in the meantime the resume is refused and the download
+  simply restarts, so a part-finished archive can never be spliced to a different one.
 
 By default, Browse shows the same `uploads` directory files land in, so anything you (or someone else) uploads is immediately available to pull back down. Point it at a different folder with `IMAGEDROP_SHARE_DIR` (see Configuration below).
 
