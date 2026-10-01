@@ -132,6 +132,21 @@
             color: #555;
         }
 
+        .progress-sub {
+            margin-top: 2px;
+            font-size: 13px;
+            color: #888;
+        }
+
+        .btn.cancel {
+            margin-top: 10px;
+            background: #fafafa;
+            color: #333;
+            border: 1px solid #ccc;
+            font-size: 15px;
+            padding: 12px;
+        }
+
         .saved-wrapper {
             margin-top: 28px;
             text-align: left;
@@ -195,7 +210,7 @@
         <form id="upload-form">
 
             <div class="drop-zone" id="drop-zone">
-                <div id="drop-text">Tap here to choose images</div>
+                <div id="drop-text">Tap here to choose files</div>
             </div>
 
             <div class="picker-row">
@@ -203,7 +218,7 @@
                 <button type="button" id="pick-folder-btn">Choose Folder</button>
             </div>
 
-            <input id="file-input" type="file" name="files" accept="image/*" multiple>
+            <input id="file-input" type="file" name="files" multiple>
             <input id="folder-input" type="file" webkitdirectory directory multiple>
 
             <div id="preview" class="preview-list"></div>
@@ -213,9 +228,11 @@
                     <div class="progress-fill" id="progress-fill"></div>
                 </div>
                 <div class="progress-label" id="progress-label"></div>
+                <div class="progress-sub" id="progress-sub"></div>
             </div>
 
             <button class="btn" type="submit" id="upload-btn">Upload</button>
+            <button class="btn cancel" type="button" id="cancel-btn" style="display:none">Cancel</button>
         </form>
 
         <div class="saved-wrapper" id="saved-wrapper">
@@ -223,7 +240,7 @@
             <strong>Saved files:</strong>
             <ul>
                 {{ range .SavedFiles }}
-                <li>{{ . }}</li>
+                <li>{{ .Name }}</li>
                 {{ end }}
             </ul>
             {{ end }}
@@ -239,6 +256,16 @@
 </div>
 
 <script>
+    // Transfer tuning. A phone on Wi-Fi rarely saturates the link with one
+    // TCP stream, so the selection is split into batches sent in parallel;
+    // batching also means a dropped connection costs one batch, not the
+    // whole upload.
+    const CONCURRENCY = 3;
+    const BATCH_BYTES = 24 * 1024 * 1024;
+    const BATCH_FILES = 50;
+    const RETRIES = 2;
+    const PREVIEW_ROWS = 200;
+
     const dropZone = document.getElementById("drop-zone");
     const fileInput = document.getElementById("file-input");
     const folderInput = document.getElementById("folder-input");
@@ -247,141 +274,318 @@
     const dropText = document.getElementById("drop-text");
     const preview = document.getElementById("preview");
     const uploadBtn = document.getElementById("upload-btn");
+    const cancelBtn = document.getElementById("cancel-btn");
     const statusText = document.getElementById("status-text");
     const savedWrapper = document.getElementById("saved-wrapper");
     const form = document.getElementById("upload-form");
     const progressWrapper = document.getElementById("progress-wrapper");
     const progressFill = document.getElementById("progress-fill");
     const progressLabel = document.getElementById("progress-label");
+    const progressSub = document.getElementById("progress-sub");
 
-    let selected = [];
+    // Keyed so picking the same folder twice, or mixing the file and folder
+    // pickers, adds to the selection instead of replacing or duplicating it.
+    const chosen = new Map();
+    let inFlight = [];
+    let cancelled = false;
+
+    const pathOf = (f) => f.webkitRelativePath || f.name;
+    const keyOf = (f) => pathOf(f) + "|" + f.size + "|" + f.lastModified;
 
     dropZone.addEventListener("click", () => fileInput.click());
     pickFilesBtn.addEventListener("click", () => fileInput.click());
     pickFolderBtn.addEventListener("click", () => folderInput.click());
 
+    dropZone.addEventListener("dragover", (e) => e.preventDefault());
+    dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        addFiles(e.dataTransfer.files);
+    });
+
+    fileInput.addEventListener("change", () => { addFiles(fileInput.files); fileInput.value = ""; });
+    folderInput.addEventListener("change", () => { addFiles(folderInput.files); folderInput.value = ""; });
+
+    function addFiles(list) {
+        for (const f of list) chosen.set(keyOf(f), f);
+        renderSelection();
+    }
+
     function renderSelection() {
         preview.innerHTML = "";
+        const files = [...chosen.values()];
 
-        if (selected.length === 0) {
-            dropText.textContent = "Tap here to choose images";
+        if (files.length === 0) {
+            dropText.textContent = "Tap here to choose files";
             return;
         }
 
-        dropText.textContent = selected.length + " files selected";
+        const total = files.reduce((a, f) => a + f.size, 0);
+        dropText.textContent = files.length + " files selected (" + formatBytes(total) + ")";
 
-        for (const f of selected) {
+        // A camera-roll upload can be thousands of files; rendering a row
+        // for each one is enough to lock up a phone before anything sends.
+        const frag = document.createDocumentFragment();
+        for (const f of files.slice(0, PREVIEW_ROWS)) {
             const item = document.createElement("div");
             item.className = "preview-item";
-            const label = f.webkitRelativePath || f.name;
-            item.textContent = label + " (" + Math.round(f.size / 1024) + " KB)";
-            preview.appendChild(item);
+            item.textContent = pathOf(f) + " (" + formatBytes(f.size) + ")";
+            frag.appendChild(item);
         }
+        if (files.length > PREVIEW_ROWS) {
+            const more = document.createElement("div");
+            more.className = "preview-item";
+            more.textContent = "+ " + (files.length - PREVIEW_ROWS) + " more";
+            frag.appendChild(more);
+        }
+        preview.appendChild(frag);
     }
-
-    fileInput.addEventListener("change", () => {
-        selected = [...fileInput.files];
-        renderSelection();
-    });
-
-    folderInput.addEventListener("change", () => {
-        selected = [...folderInput.files];
-        renderSelection();
-    });
 
     function formatBytes(n) {
         const units = ["B", "KB", "MB", "GB"];
         let i = 0;
-        while (n >= 1024 && i < units.length - 1) {
-            n /= 1024;
-            i++;
-        }
+        while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
         return n.toFixed(1) + " " + units[i];
     }
 
-    form.addEventListener("submit", (e) => {
+    function formatDuration(seconds) {
+        if (!isFinite(seconds) || seconds < 0) return "";
+        if (seconds < 60) return Math.ceil(seconds) + "s left";
+        const m = Math.floor(seconds / 60);
+        return m + "m " + Math.ceil(seconds % 60) + "s left";
+    }
+
+    // Files large enough to fill a batch on their own get their own request,
+    // so a retry never resends megabytes that already landed.
+    function makeBatches(files) {
+        const batches = [];
+        let current = [];
+        let bytes = 0;
+
+        for (const f of files) {
+            if (f.size >= BATCH_BYTES) { batches.push([f]); continue; }
+            if (current.length && (bytes + f.size > BATCH_BYTES || current.length >= BATCH_FILES)) {
+                batches.push(current);
+                current = [];
+                bytes = 0;
+            }
+            current.push(f);
+            bytes += f.size;
+        }
+        if (current.length) batches.push(current);
+
+        return batches;
+    }
+
+    function sendBatch(batch, onProgress) {
+        return new Promise((resolve, reject) => {
+            const data = new FormData();
+            for (const f of batch) {
+                // Explicit filename arg carries the folder path
+                // (webkitRelativePath) through to the server; the browser
+                // won't send it otherwise.
+                data.append("files", f, pathOf(f));
+            }
+
+            const xhr = new XMLHttpRequest();
+            inFlight.push(xhr);
+            xhr.open("POST", "/", true);
+            xhr.setRequestHeader("Accept", "application/json");
+
+            xhr.upload.addEventListener("progress", (ev) => {
+                if (ev.lengthComputable) onProgress(ev.loaded);
+            });
+
+            xhr.addEventListener("load", () => {
+                let result;
+                try {
+                    result = JSON.parse(xhr.responseText);
+                } catch (err) {
+                    reject(new Error("unexpected server response"));
+                    return;
+                }
+                if (xhr.status >= 400 || result.error) {
+                    reject(new Error(result.error || ("server returned " + xhr.status)));
+                    return;
+                }
+                resolve(result.savedFiles || []);
+            });
+
+            xhr.addEventListener("error", () => reject(new Error("connection lost")));
+            xhr.addEventListener("abort", () => reject(new Error("cancelled")));
+
+            xhr.send(data);
+        });
+    }
+
+    async function runPool(tasks, limit) {
+        let next = 0;
+        const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+            while (next < tasks.length) {
+                await tasks[next++]();
+            }
+        });
+        await Promise.all(workers);
+    }
+
+    // Asks the server which files it is missing before sending anything, so
+    // re-syncing a folder that is already there costs one small JSON round
+    // trip instead of re-transferring every byte.
+    async function filterAlreadyThere(files) {
+        const manifest = files.map((f) => ({ path: pathOf(f), size: f.size }));
+
+        const res = await fetch("/upload/plan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(manifest),
+        });
+        if (!res.ok) return files;
+
+        const needed = new Set((await res.json()).need || []);
+        return files.filter((f) => needed.has(pathOf(f)));
+    }
+
+    function setBusy(busy) {
+        uploadBtn.disabled = busy;
+        uploadBtn.textContent = busy ? "Uploading..." : "Upload";
+        cancelBtn.style.display = busy ? "block" : "none";
+    }
+
+    function fail(message) {
+        statusText.textContent = message;
+        statusText.classList.add("error");
+    }
+
+    cancelBtn.addEventListener("click", () => {
+        cancelled = true;
+        for (const xhr of inFlight) xhr.abort();
+    });
+
+    form.addEventListener("submit", async (e) => {
         e.preventDefault();
 
-        if (selected.length === 0) {
-            statusText.textContent = "Select at least one image.";
-            statusText.classList.add("error");
+        const files = [...chosen.values()];
+        if (files.length === 0) {
+            fail("Select at least one file.");
             return;
         }
 
-        const formData = new FormData();
-        for (const f of selected) {
-            // Explicit filename arg carries the folder path (webkitRelativePath)
-            // through to the server; the browser won't send it otherwise.
-            formData.append("files", f, f.webkitRelativePath || f.name);
-        }
-
-        uploadBtn.disabled = true;
-        uploadBtn.textContent = "Uploading...";
+        cancelled = false;
+        inFlight = [];
+        setBusy(true);
         statusText.textContent = "";
         statusText.classList.remove("error");
+        savedWrapper.innerHTML = "";
         progressWrapper.style.display = "block";
         progressFill.style.width = "0%";
-        progressLabel.textContent = "";
+        progressLabel.textContent = "Checking what's already there...";
+        progressSub.textContent = "";
 
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/", true);
-        xhr.setRequestHeader("Accept", "application/json");
+        let pending;
+        try {
+            pending = await filterAlreadyThere(files);
+        } catch (err) {
+            pending = files;
+        }
 
-        xhr.upload.addEventListener("progress", (ev) => {
-            if (!ev.lengthComputable) return;
-            const pct = Math.round((ev.loaded / ev.total) * 100);
+        const skipped = files.length - pending.length;
+        if (pending.length === 0) {
+            setBusy(false);
+            progressFill.style.width = "100%";
+            progressLabel.textContent = "Already up to date";
+            progressSub.textContent = skipped + " files were already on the computer.";
+            return;
+        }
+
+        const total = pending.reduce((a, f) => a + f.size, 0);
+        const batches = makeBatches(pending);
+        const loaded = new Array(batches.length).fill(0);
+        const saved = [];
+        const failures = [];
+
+        const startedAt = performance.now();
+        let lastPaint = 0;
+
+        function paint(force) {
+            const now = performance.now();
+            if (!force && now - lastPaint < 120) return;
+            lastPaint = now;
+
+            const done = Math.min(total, loaded.reduce((a, b) => a + b, 0));
+            const pct = total > 0 ? Math.round((done / total) * 100) : 100;
+            const elapsed = (now - startedAt) / 1000;
+            const rate = elapsed > 0.5 ? done / elapsed : 0;
+
             progressFill.style.width = pct + "%";
-            progressLabel.textContent = pct + "% (" + formatBytes(ev.loaded) + " / " + formatBytes(ev.total) + ")";
-        });
+            progressLabel.textContent = pct + "% (" + formatBytes(done) + " / " + formatBytes(total) + ")";
+            progressSub.textContent = rate > 0
+                ? formatBytes(rate) + "/s · " + formatDuration((total - done) / rate)
+                : "";
+        }
 
-        xhr.addEventListener("load", () => {
-            uploadBtn.disabled = false;
-            uploadBtn.textContent = "Upload";
-
-            let result = {};
-            try {
-                result = JSON.parse(xhr.responseText);
-            } catch (err) {
-                result = { error: "unexpected server response" };
-            }
-
-            if (result.error) {
-                statusText.textContent = result.error;
-                statusText.classList.add("error");
-            } else {
-                statusText.textContent = "";
-                statusText.classList.remove("error");
-            }
-
-            savedWrapper.innerHTML = "";
-            if (result.savedFiles && result.savedFiles.length > 0) {
-                const strong = document.createElement("strong");
-                strong.textContent = "Saved files:";
-                const ul = document.createElement("ul");
-                for (const name of result.savedFiles) {
-                    const li = document.createElement("li");
-                    li.textContent = name;
-                    ul.appendChild(li);
+        const tasks = batches.map((batch, i) => async () => {
+            for (let attempt = 0; attempt <= RETRIES; attempt++) {
+                if (cancelled) return;
+                try {
+                    const names = await sendBatch(batch, (bytes) => {
+                        loaded[i] = bytes;
+                        paint(false);
+                    });
+                    saved.push(...names);
+                    // The upload event reports multipart framing too, so pin
+                    // the finished batch to its real size rather than letting
+                    // the bar drift past 100%.
+                    loaded[i] = batch.reduce((a, f) => a + f.size, 0);
+                    paint(true);
+                    return;
+                } catch (err) {
+                    loaded[i] = 0;
+                    paint(true);
+                    if (cancelled || attempt === RETRIES) {
+                        failures.push(err.message);
+                        return;
+                    }
+                    await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
                 }
-                savedWrapper.appendChild(strong);
-                savedWrapper.appendChild(ul);
-
-                selected = [];
-                fileInput.value = "";
-                folderInput.value = "";
-                renderSelection();
             }
         });
 
-        xhr.addEventListener("error", () => {
-            uploadBtn.disabled = false;
-            uploadBtn.textContent = "Upload";
-            statusText.textContent = "Upload failed (connection error).";
-            statusText.classList.add("error");
-        });
+        await runPool(tasks, CONCURRENCY);
 
-        xhr.send(formData);
+        setBusy(false);
+        paint(true);
+
+        const seconds = Math.max(1, Math.round((performance.now() - startedAt) / 1000));
+
+        if (cancelled) {
+            fail("Cancelled after " + saved.length + " files. Press Upload to resume.");
+        } else if (failures.length > 0) {
+            // The selection is kept on a partial failure: pressing Upload
+            // again re-runs the pre-flight check, which skips everything
+            // that already landed and resends only the rest.
+            fail(failures.length + " batch(es) failed (" + failures[0] + "). Press Upload to retry the rest.");
+        } else {
+            chosen.clear();
+            renderSelection();
+            progressLabel.textContent = "Done in " + seconds + "s";
+            progressSub.textContent = saved.length + " files uploaded ("
+                + formatBytes(total / seconds) + "/s)"
+                + (skipped > 0 ? ", " + skipped + " already there" : "");
+        }
+
+        if (saved.length > 0) {
+            const strong = document.createElement("strong");
+            strong.textContent = "Saved files:";
+            const list = document.createElement("ul");
+            for (const file of saved.slice(0, PREVIEW_ROWS)) {
+                const li = document.createElement("li");
+                li.textContent = file.name;
+                list.appendChild(li);
+            }
+            savedWrapper.appendChild(strong);
+            savedWrapper.appendChild(list);
+        }
     });
+
 </script>
 
 </body>
