@@ -1,9 +1,11 @@
 # Local Image Uploader
 
-A Golang HTTP server that allows you to upload images (or entire folders) from your phone to your laptop over the same Wi-Fi network.
-The server runs locally and exposes a simple web interface where you can select files or a folder, preview them before upload, and store them on your machine.
+A Golang HTTP server for moving files between your phone and laptop over the same Wi-Fi network, in either direction:
 
-Uploads are streamed straight to disk — memory use stays constant whether you send one photo or a 10GB folder.
+- **Upload (phone → PC):** pick files or a folder on your phone, send them to your laptop.
+- **Browse/Download (PC → phone):** browse a folder on your laptop from your phone and pull files (or a whole folder, zipped) back down.
+
+Transfers are streamed straight to disk in both directions — memory use stays constant whether you move one photo or a 10GB folder.
 
 The UI is optimized for iPhone Safari and desktop browsers.
 Multi-select from the iOS Photo Library works reliably.
@@ -18,6 +20,9 @@ Multi-select from the iOS Photo Library works reliably.
 - Folder upload with relative folder structure preserved
 - Live progress bar (percent + bytes transferred)
 - Files saved to disk with unique timestamp prefixes
+- Browse page to navigate folders on the PC from your phone
+- Download single files (with resume support via HTTP Range)
+- Download an entire folder as a streamed `.zip`, at any size
 - Minimal, responsive mobile UI
 - Large upload button and centered layout
 - iPhone-compatible multi-image selection
@@ -100,6 +105,19 @@ You can open the file, move it, rename it, or use it anywhere else.
 
 ---
 
+### 5. Browsing and Downloading (PC → Phone)
+
+Tap **Browse** (next to **Upload** in the nav row) to go the other way: pull files from your laptop down to your phone.
+
+- Folders are listed first, then files, each with its size.
+- Tap a folder name to open it; breadcrumbs at the top let you go back up.
+- Tap **Download** on a file to pull just that file (images open inline so iOS Safari's long-press **Save to Photos** still works; other file types download as usual).
+- Tap **Zip** next to a folder, or **Download this folder as .zip** at the top, to pull an entire folder at once — it's zipped on the fly as it streams, so this works for folders much larger than your phone's free RAM.
+
+By default, Browse shows the same `uploads` directory files land in, so anything you (or someone else) uploads is immediately available to pull back down. Point it at a different folder with `IMAGEDROP_SHARE_DIR` (see Configuration below).
+
+---
+
 ## Running the Server
 
 #### Requirements
@@ -145,6 +163,7 @@ You may configure runtime behavior using environment variables.
 |-------------------------|------------------------------|----------|
 | `IMAGEDROP_ADDR`        | Listen address/port          | `:8080`  |
 | `IMAGEDROP_UPLOAD_DIR`  | Directory to save uploads    | `uploads`|
+| `IMAGEDROP_SHARE_DIR`   | Directory exposed by the Browse/Download page | same as `IMAGEDROP_UPLOAD_DIR` |
 | `IMAGEDROP_MAX_UPLOAD_MB` | Max upload request size (MB); unset or `0` means unlimited (disk space is the only limit) | `0` (unlimited) |
 
 ### Example (PowerShell)
@@ -174,6 +193,6 @@ Both examples above set an explicit 200MB cap; omit the variable (or set it to `
 ## Notes
 
 - Designed for local network use only.
-- Do **not** expose this server directly to the public internet.
+- Do **not** expose this server directly to the public internet — the Browse page has no authentication, so anyone on the network who can reach the server can read `IMAGEDROP_SHARE_DIR`.
 - Uploads are unlimited by default (bounded only by free disk space); set `IMAGEDROP_MAX_UPLOAD_MB` for a cap.
-- No server-side time limit on an upload — large files or folders just take as long as your Wi-Fi speed allows.
+- No server-side time limit on a transfer in either direction — large files or folders just take as long as your Wi-Fi speed allows.
