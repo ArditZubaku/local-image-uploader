@@ -17,12 +17,17 @@ Multi-select from the iOS Photo Library works reliably.
 - Runs as a single Go binary
 - No external dependencies (standard library only)
 - Streams uploads directly to disk — no size limit, no buffering in memory
+- Uploads sent as several parallel requests, so one phone can saturate the link
+- Skips files already on the PC (same path and size), making a re-sync near-instant
 - Folder upload with relative folder structure preserved
-- Live progress bar (percent + bytes transferred)
-- Files saved to disk with unique timestamp prefixes
+- Live progress bar with transfer speed and ETA, plus cancel and automatic retry
+- Files keep their original names (` (2)` only on a real collision)
 - Browse page to navigate folders on the PC from your phone
+- Photo grid with cached thumbnails, so browsing a folder costs kilobytes, not gigabytes
+- Multi-select any mix of files and folders and pull them down as one `.zip`
 - Download single files (with resume support via HTTP Range)
-- Download an entire folder as a streamed `.zip`, at any size
+- Download an entire folder as a streamed `.zip`, at any size — with a real
+  `Content-Length`, so the phone shows a progress bar and an ETA
 - Minimal, responsive mobile UI
 - Large upload button and centered layout
 - iPhone-compatible multi-image selection
@@ -109,10 +114,20 @@ You can open the file, move it, rename it, or use it anywhere else.
 
 Tap **Browse** (next to **Upload** in the nav row) to go the other way: pull files from your laptop down to your phone.
 
+- Images show as a thumbnail grid by default; the **List**/**Grid** button switches
+  views and the choice is remembered. Thumbnails are generated once and cached, so a
+  folder of 60 photos loads in about a megabyte instead of a few hundred.
 - Folders are listed first, then files, each with its size.
 - Tap a folder name to open it; breadcrumbs at the top let you go back up.
-- Tap **Download** on a file to pull just that file (images open inline so iOS Safari's long-press **Save to Photos** still works; other file types download as usual).
-- Tap **Zip** next to a folder, or **Download this folder as .zip** at the top, to pull an entire folder at once — it's zipped on the fly as it streams, so this works for folders much larger than your phone's free RAM.
+- Tap a photo (or **Get** on a file) to pull the full-size original — images open
+  inline so iOS Safari's long-press **Save to Photos** still works; other file types
+  download as usual.
+- Tick any mix of files and folders and tap **Download N items (.zip)** to pull just
+  that selection.
+- Use **Download folder (.zip)** at the top to pull everything in the current folder.
+  Archives are zipped on the fly as they stream, so this works for folders much larger
+  than your phone's free RAM, and the exact size is sent up front so the phone can show
+  real progress.
 
 By default, Browse shows the same `uploads` directory files land in, so anything you (or someone else) uploads is immediately available to pull back down. Point it at a different folder with `IMAGEDROP_SHARE_DIR` (see Configuration below).
 
@@ -164,6 +179,7 @@ You may configure runtime behavior using environment variables.
 | `IMAGEDROP_ADDR`        | Listen address/port          | `:8080`  |
 | `IMAGEDROP_UPLOAD_DIR`  | Directory to save uploads    | `uploads`|
 | `IMAGEDROP_SHARE_DIR`   | Directory exposed by the Browse/Download page | same as `IMAGEDROP_UPLOAD_DIR` |
+| `IMAGEDROP_THUMB_DIR`   | Where generated thumbnails are cached; `off` disables previews | OS cache dir, e.g. `~/Library/Caches/imagedrop/thumbs` |
 | `IMAGEDROP_MAX_UPLOAD_MB` | Max upload request size (MB); unset or `0` means unlimited (disk space is the only limit) | `0` (unlimited) |
 
 ### Example (PowerShell)
