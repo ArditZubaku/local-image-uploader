@@ -132,3 +132,66 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 	c.n += int64(len(p))
 	return len(p), nil
 }
+
+// TestZipSizeZip64Boundaries covers the branches a large course folder
+// actually hits: members at and either side of the 4 GiB mark, and members
+// starting past it.
+//
+// An earlier formula hardcoded the central-directory zip64 extra at 28
+// bytes and used ">=" where archive/zip uses ">", which made
+// Content-Length 8 bytes too long for a 17 GB folder - the phone received
+// every byte and then waited forever for the rest.
+func TestZipSizeZip64Boundaries(t *testing.T) {
+	if testing.Short() {
+		t.Skip("streams several GiB")
+	}
+
+	cases := []struct {
+		name  string
+		sizes []int64
+	}{
+		{"just under 4 GiB", []int64{uint32Max - 1}},
+		{"exactly 4 GiB - 1", []int64{uint32Max}},
+		{"just over 4 GiB", []int64{uint32Max + 1}},
+		{"offset past 4 GiB", []int64{uint32Max + 1, 10}},
+		{"two oversized", []int64{5 << 30, 5 << 30}},
+		{"small after big", []int64{1 << 20, 5 << 30, 1 << 20}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			for i, size := range tc.sizes {
+				// Sparse: reads as zeros, costs no disk space.
+				f, err := os.Create(filepath.Join(root, fmt.Sprintf("f%d.bin", i)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := f.Truncate(size); err != nil {
+					t.Fatal(err)
+				}
+				if err := f.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			r, err := NewRoot(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan, err := r.PlanZip([]string{""})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var counted countingWriter
+			if err := plan.Stream(&counted); err != nil {
+				t.Fatal(err)
+			}
+			if counted.n != plan.Size {
+				t.Errorf("wrote %d bytes, Content-Length would claim %d (off by %d)",
+					counted.n, plan.Size, plan.Size-counted.n)
+			}
+		})
+	}
+}
